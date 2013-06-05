@@ -34,23 +34,31 @@ Game.prototype.start = function()
 	this.particlebuffer.canvas = document.createElement("canvas");
 	this.particlebuffer.context = this.particlebuffer.canvas.getContext("2d");
 
+	this.background = null;
+	this.resize();
+
+	// loop timing stuff
+
 	this.dt = 30;
 	this.time = 0;
 	this.accumulator = 0;
 	this.framePercent = 0;
 	this.interpolate = true;
 
+	// image resources
+
 	this.images = {};
 	this.images["duck"] = document.getElementById("duck");
 	this.images["duckhead"] = document.getElementById("duckhead");
+	this.images["duckbody"] = document.getElementById("duckbody");
 
 	var particleRadius = 3;
 
-	this.images["particle"] = document.createElement("canvas");
-	this.images["particle"].width = particleRadius * 2;
-	this.images["particle"].height = particleRadius * 2;
+	this.images["blood"] = document.createElement("canvas");
+	this.images["blood"].width = particleRadius * 2;
+	this.images["blood"].height = particleRadius * 2;
 
-	var ctx = this.images["particle"].getContext("2d");
+	var ctx = this.images["blood"].getContext("2d");
 	var gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, particleRadius);
 	gradient.addColorStop(0, "#F00");
 	gradient.addColorStop(1, "rgba(255, 0, 0, 0)");
@@ -58,24 +66,27 @@ Game.prototype.start = function()
 	ctx.translate(particleRadius, particleRadius);
 	ctx.fillRect(-particleRadius, -particleRadius, 2 * particleRadius, 2 * particleRadius);
 
-	this.background = null;
-	this.ducks = [];
-	this.maxDucks = 100;
+	// game stuff
+
 	this.shake = 0;
 	this.shakeOffset = { x: 0, y: 0 };
 
-	this.resize();
+	this.duckEmitter = new Emitter(this, {
+		create: function(owner)           { return new Duck(); },
+		update: function(owner, duck, dt) { duck.update(dt);   },
+		emit:   function(owner, duck)     { duck.spawn();      },
+		dead:   function(owner, duck)     { return duck.gone;  }
+	});
 
-	var nDucks = 1000;
-	this.ducks.length = nDucks;
+	this.duckEmitter.init(this.width / 400, 10);
 
-	for (var i = 0; i < nDucks; i++)
-		this.ducks[i] = new Duck();
+	this.duckPieces = [];
+	this.duckPiecesCount = 0;
 
-	this.duckPiece = new DuckPiece();
-	this.duckPiece.image = this.images["duckhead"];
-	this.duckPiece.center.x = 25;
-	this.duckPiece.center.y = 30;
+	for (var i = 0; i < 5; i++)
+		this.duckPieces.push(new DuckPiece());
+
+	// callbacks/events
 
 	document.onselectstart = function()  { return false; };
 	window.onresize        = function()  { game.resize(); };
@@ -84,11 +95,13 @@ Game.prototype.start = function()
 	window.onkeydown       = function(e) { game.keyboard(e.keyCode || e.which, true); };
 	window.onkeyup         = function(e) { game.keyboard(e.keyCode || e.which, false); };
 
+	// call frame to start the loop
+
 	this.time = Date.now();
-	this.loop();
+	this.frame();
 }
 
-Game.prototype.loop = function()
+Game.prototype.frame = function()
 {
 	var dt = this.dt;
 	var dts = dt / 1000;
@@ -109,31 +122,34 @@ Game.prototype.loop = function()
 	this.draw(this.backbuffer.context, percent);
 	this.frontbuffer.context.drawImage(this.backbuffer.canvas, 0, 0);
 
-	requestAnimationFrame(function() { game.loop() });
+	requestAnimationFrame(function() { game.frame() });
 }
 
 Game.prototype.update = function(dt)
 {
-	var ducks = this.ducks;
-	var nDucks = ducks.length;
-
-	for (var i = 0; i < nDucks; i++)
-	{
-		if (!ducks[i].gone)
-		{
-			ducks[i].update(dt);
-		}
-		else if (i < this.maxDucks && rand(0, 1000) < (this.width / 400) * (1000 / 30) * dt)
-		{
-			ducks[i].spawn();
-			ducks[i].update(dt);
-		}
-	}
-
 	if (this.shake > 0)
 		this.shake -= dt;
 
-	this.duckPiece.update(dt);
+	this.duckEmitter.update(dt);
+
+	var c = this.duckPiecesCount;
+
+	for (var i = 0; i < c; i++)
+	{
+		var piece = this.duckPieces[i];
+
+		piece.update(dt);
+
+		if (!piece.active)
+		{
+			this.duckPieces[i] = this.duckPieces[c - 1];
+			this.duckPieces[c - 1] = piece;
+			c--;
+			i--;
+		}
+	}
+
+	this.duckPiecesCount = c;
 }
 
 Game.prototype.draw = function(context, percent)
@@ -159,16 +175,16 @@ Game.prototype.draw = function(context, percent)
 		partctx.translate(x, y);
 	}
 
-	var ducks = this.ducks;
-	var nDucks = ducks.length;
+	var c = this.duckPiecesCount;
+
+	for (var i = 0; i < c; i++)
+		this.duckPieces[i].draw(context, percent);
+
+	var ducks = this.duckEmitter.elements;
+	var nDucks = this.duckEmitter.count;
 
 	for (var i = 0; i < nDucks; i++)
-	{
-		if (!ducks[i].gone)
-			ducks[i].draw(context, percent);
-	}
-
-	this.duckPiece.draw(context, percent);
+		ducks[i].draw(context, percent);
 
 	context.restore();
 }
@@ -188,6 +204,9 @@ Game.prototype.resize = function()
 	this.background = this.backbuffer.context.createLinearGradient(0, 0, 0, this.height);
 	this.background.addColorStop(0, "#00F");
 	this.background.addColorStop(1, "#FFF");
+
+	if (this.duckEmitter)
+		this.duckEmitter.emissionRate = this.width / 100;
 }
 
 Game.prototype.mouse = function(x, y, pressed)
@@ -200,16 +219,78 @@ Game.prototype.mouse = function(x, y, pressed)
 			y += this.shakeOffset.y;
 		}
 
-		this.shake = 0.3 + rand(0, 0.2);
+		this.shake = 0.4;
 
-		var ducks = this.ducks;
-		var nDucks = ducks.length;
+		var ducks = this.duckEmitter.elements;
+		var nDucks = this.duckEmitter.count;
 
 		for (var i = nDucks - 1; i >= 0; i--)
 		{
-			if (!ducks[i].gone && ducks[i].collides(x, y, this.framePercent))
+			if (ducks[i].collides(x, y, this.framePercent))
 			{
+				var j = 0;
+				var c = this.duckPiecesCount;
+				var L = this.duckPieces.length;
+
+				var head = null;
+				var body = null;
+
+				if (c < L)
+				{
+					head = this.duckPieces[c++];
+				}
+				else
+				{
+					var furthest = 0;
+					var dist = -1;
+
+					for (var j = 0; j < L; j++)
+					{
+						var pos = this.duckPieces[j].blood.position;
+						var d = (pos.x - x) * (pos.x - x) + (pos.y - y) * (pos.y - y);
+
+						if (d > dist)
+						{
+							furthest = j;
+							dist = d;
+						}
+					}
+
+					head = this.duckPieces[furthest];
+				}
+
+				if (c < L)
+				{
+					body = this.duckPieces[c++];
+				}
+				else
+				{
+					var furthest = 0;
+					var dist = -1;
+
+					for (var j = 0; j < L; j++)
+					{
+						if (this.duckPieces[j] === head)
+							continue;
+
+						var pos = this.duckPieces[j].blood.position;
+						var d = (pos.x - x) * (pos.x - x) + (pos.y - y) * (pos.y - y);
+
+						if (d > dist)
+						{
+							furthest = j;
+							dist = d;
+						}
+					}
+
+					body = this.duckPieces[furthest];
+				}
+
+				this.duckPiecesCount = c;
+
+				ducks[i].split(head, body);
 				ducks[i].gone = true;
+
 				break;
 			}
 		}
@@ -218,15 +299,13 @@ Game.prototype.mouse = function(x, y, pressed)
 
 Game.prototype.keyboard = function(key, pressed)
 {
-	if (!pressed && key == 32)
-		this.interpolate = !this.interpolate;
 }
 
 //******************************************************************************
 // Entity
 //******************************************************************************
 
-Entity = function()
+function Entity()
 {
 	this.prevang  = 0;
 	this.prevpos  = { x: 0, y: 0, z: 0 };
@@ -250,6 +329,88 @@ Entity.prototype.update = function(dt)
 	this.position.z += this.velocity.z * dt;
 }
 
+Entity.prototype.setPosition = function(x, y, z)
+{
+	this.prevpos.x = this.position.x = x;
+	this.prevpos.y = this.position.y = y;
+	this.prevpos.z = this.position.z = z;
+}
+
+Entity.prototype.setVelocity = function(x, y, z)
+{
+	this.velocity.x = x;
+	this.velocity.y = y;
+	this.velocity.z = z;
+}
+
+Entity.prototype.setAngle = function(angle)
+{
+	this.prevang = this.angle = angle;
+}
+
+//******************************************************************************
+// Emitter
+//******************************************************************************
+
+function Emitter(owner, callbacks)
+{
+	this.owner = owner;
+	this.elements = [];
+	this.count = 0;
+	this.emissionRate = 0;
+	this.emitCounter = 0;
+
+	// callbacks
+	this.createElement = callbacks.create;
+	this.updateElement = callbacks.update;
+	this.emitElement   = callbacks.emit;
+	this.deadElement   = callbacks.dead;
+}
+
+Emitter.prototype.init = function(rate, size)
+{
+	this.emissionRate = rate;
+	this.elements.length = size;
+
+	for (var i = 0; i < size; i++)
+		this.elements[i] = this.createElement(this.owner);
+}
+
+Emitter.prototype.reset = function()
+{
+	this.count = 0;
+	this.emitCounter = 0;
+}
+
+Emitter.prototype.update = function(dt)
+{
+	var max = this.elements.length;
+	var rate = 1.0 / this.emissionRate;
+
+	this.emitCounter += dt;
+
+	while (this.count < max && this.emitCounter > rate)
+	{
+		this.emitCounter -= rate;
+		this.emitElement(this.owner, this.elements[this.count++]);
+	}
+
+	for (var i = 0; i < this.count; i++)
+	{
+		var element = this.elements[i];
+
+		this.updateElement(this.owner, element, dt);
+
+		if (this.deadElement(this.owner, element))
+		{
+			this.elements[i] = this.elements[this.count - 1];
+			this.elements[this.count - 1] = element;
+			this.count--;
+			i--;
+		}
+	}
+}
+
 //******************************************************************************
 // Duck
 //******************************************************************************
@@ -270,17 +431,11 @@ Duck.prototype.spawn = function()
 	var dir = rand(225, 315) * (Math.PI / 180);
 	var vel = rand(20, 1000);
 
-	this.position.x = rand(0, game.width);
-	this.position.y = -60;
-	this.velocity.x = vel * Math.cos(dir);
-	this.velocity.y = vel * -Math.sin(dir);
-	this.angle      = rand(0,    360) * (Math.PI / 180);
-	this.angvel     = rand(-720, 720) * (Math.PI / 180);
+	this.setPosition(rand(0, game.width), -60, 0);
+	this.setVelocity(vel * Math.cos(dir), vel * -Math.sin(dir), 0);
+	this.setAngle(rand(0, 360) * (Math.PI / 180));
 
-	this.prevang   = this.angle;
-	this.prevpos.x = this.position.x;
-	this.prevpos.y = this.position.y;
-
+	this.angvel = rand(-720, 720) * (Math.PI / 180);
 	this.gone = false;
 }
 
@@ -289,7 +444,7 @@ Duck.prototype.collides = function(x, y, framePercent)
 	var deltax = lerp(this.prevpos.x, this.position.x, framePercent) - x;
 	var deltay = lerp(this.prevpos.y, this.position.y, framePercent) - y;
 
-	if (Math.sqrt(deltax * deltax + deltay * deltay) < 25)
+	if (deltax * deltax + deltay * deltay < 25*25)
 		return true;
 
 	return false;
@@ -300,12 +455,53 @@ Duck.prototype.withinBounds = function()
 	return this.position.y <= game.height + 120 && this.position.x >= -120 && this.position.x <= game.width + 120;
 }
 
+Duck.prototype.split = function(head, body)
+{
+	var s = -Math.sin(this.angle);
+	var c =  Math.cos(this.angle);
+
+	// head
+
+	var offsetx = 3*c - (-9)*s;
+	var offsety = 3*s + (-9)*c;
+
+	var dirh = this.angle + deg(90) + deg(rand(-10, 10));
+	var speedh = rand(100, 200);
+
+	var xh = this.position.x + offsetx;
+	var yh = this.position.y + offsety;
+	var ah = this.angle - deg(90);
+	var vah = this.angvel;
+	var vxh = this.velocity.x + speedh *  Math.cos(dirh);
+	var vyh = this.velocity.y + speedh * -Math.sin(dirh);
+	var vzh = -rand(0, 10) / 20;
+
+	// body
+
+	var offsetx = 5*c - 12*s;
+	var offsety = 5*s + 12*c;
+
+	var dirb = this.angle - deg(90) + deg(rand(-10, 10));
+	var speedb = rand(100, 200);
+
+	var xb = this.position.x + offsetx;
+	var yb = this.position.y + offsety;
+	var ab = this.angle + deg(90);
+	var vab = -this.angvel;
+	var vxb = this.velocity.x + speedb *  Math.cos(dirb);
+	var vyb = this.velocity.y + speedb * -Math.sin(dirb);
+	var vzb = -rand(0, 10) / 20;
+
+	head.reset(game.images["duckhead"], 25, 30, xh, yh, ah, vxh, vyh, 0, vah);
+	body.reset(game.images["duckbody"], 13, 30, xb, yb, ab, vxb, vyb, 0, vab);
+}
+
 Duck.prototype.update = function(dt)
 {
-	this.gone = !this.withinBounds();
-
-	if (!this.gone)
+	if (this.withinBounds())
 		Entity.prototype.update.call(this, dt);
+	else
+		this.gone = true;
 }
 
 Duck.prototype.draw = function(context, percent)
@@ -316,7 +512,7 @@ Duck.prototype.draw = function(context, percent)
 
 	context.save();
 	context.translate(x, y);
-	context.rotate(a);
+	context.rotate(-a);
 	context.drawImage(this.image, -this.center.x, -this.center.y);
 
 	if (false)
@@ -332,60 +528,48 @@ Duck.prototype.draw = function(context, percent)
 }
 
 //******************************************************************************
-// BloodEmitter
+// Blood
 //******************************************************************************
 
-BloodEmitter.prototype = new Entity();
+Blood.prototype = new Entity();
 
-function BloodEmitter(particleImage)
+function Blood()
 {
 	Entity.call(this);
 
-	this.max = 500;
-	this.particles = [];
-	this.particles.length = this.max;
-	this.count = 0;
-	this.emissionRate = 300;
-	this.emitCounter = 0;
-	this.elapsed = 0;
-	this.particleImage = particleImage;
+	this.particleImage = game.images["blood"];
 
-	for (var i = 0; i < this.max; i++)
-		this.particles[i] = new Particle();
+	this.emitter = new Emitter(this, {
+		create: function(owner)              { return new Particle();    },
+		update: function(owner, element, dt) { element.update(dt);       },
+		emit:   function(owner, element)     { owner.emit(element);      },
+		dead:   function(owner, element)     { return element.life <= 0; }
+	});
+
+	this.emitter.init(200, 250);
 }
 
-BloodEmitter.prototype.update = function(dt)
+Blood.prototype.emit = function(particle)
+{
+	var dirAngle = this.angle - 0.5 * Math.PI;
+	var dirMagnitude = rand(-1, 1);
+
+	var x = dirMagnitude * Math.cos(dirAngle);
+	var y = dirMagnitude * -Math.sin(dirAngle);
+	var life = 0.8;
+	var angle = this.angle + rand(-10, 10) * Math.PI / 180;
+	var speed = rand(200, 230);
+
+	particle.reset(x, y, life, angle, speed);
+}
+
+Blood.prototype.update = function(dt)
 {
 	Entity.prototype.update.call(this, dt);
-
-	this.elapsed += dt;
-
-	var rate = 1.0 / this.emissionRate;
-	this.emitCounter += dt;
-
-	while (this.count < this.max && this.emitCounter > rate)
-	{
-		this.add();
-		this.emitCounter -= rate;
-	}
-
-	for (var i = 0; i < this.count; i++)
-	{
-		var particle = this.particles[i];
-
-		particle.update(dt);
-
-		if (particle.life <= 0)
-		{
-			this.particles[i] = this.particles[this.count - 1];
-			this.particles[this.count - 1] = particle;
-			this.count--;
-			i--;
-		}
-	}
+	this.emitter.update(dt);
 }
 
-BloodEmitter.prototype.draw = function(context, percent)
+Blood.prototype.draw = function(context, percent)
 {
 	var x = lerp(this.prevpos.x, this.position.x, percent);
 	var y = lerp(this.prevpos.y, this.position.y, percent);
@@ -398,9 +582,10 @@ BloodEmitter.prototype.draw = function(context, percent)
 
 	context.globalCompositeOperation = "lighter";
 
-	for (var i = 0; i < this.count; i++)
+	for (var i = 0; i < this.emitter.count; i++)
 	{
-		var particle = this.particles[i];
+		var particle = this.emitter.elements[i];
+
 		var x = lerp(particle.prevpos.x, particle.position.x, percent);
 		var y = lerp(particle.prevpos.y, particle.position.y, percent);
 		var life = lerp(particle.prevlife, particle.life, percent);
@@ -410,24 +595,6 @@ BloodEmitter.prototype.draw = function(context, percent)
 	}
 
 	context.restore();
-}
-
-BloodEmitter.prototype.add = function()
-{
-	if (this.count < this.max)
-	{
-		var dirAngle = this.angle - 0.5 * Math.PI;
-		var dirMagnitude = rand(-1, 1);
-
-		var x = dirMagnitude * Math.cos(dirAngle);
-		var y = dirMagnitude * -Math.sin(dirAngle);
-		var life = 0.8;
-		var angle = this.angle + rand(-10, 10) * Math.PI / 180;
-		var speed = rand(200, 230);
-
-		this.particles[this.count].reset(x, y, life, angle, speed);
-		this.count++;
-	}
 }
 
 //******************************************************************************
@@ -446,14 +613,9 @@ function Particle()
 
 Particle.prototype.reset = function(x, y, life, angle, speed)
 {
-	this.prevlife = life;
-	this.life = life;
-	this.prevpos.x  = x;
-	this.prevpos.y  = y;
-	this.position.x = x;
-	this.position.y = y;
-	this.velocity.x = speed * Math.cos(angle);
-	this.velocity.y = speed * Math.sin(angle);
+	this.setPosition(x, y, 0);
+	this.setVelocity(speed * Math.cos(angle), speed * -Math.sin(angle));
+	this.prevlife = this.life = life;
 }
 
 Particle.prototype.update = function(dt)
@@ -468,34 +630,47 @@ Particle.prototype.update = function(dt)
 // DuckPiece
 //******************************************************************************
 
-DuckPiece.prototype = new BloodEmitter();
-
 function DuckPiece()
 {
-	BloodEmitter.call(this, game.images["particle"]);
-
 	this.image = null;
 	this.center = { x: 0, y: 0 };
+	this.blood = new Blood();
+	this.active = false;
+}
 
-	this.velocity.x = 100;
-	this.velocity.y = 80;
-	this.velocity.z = -0.5;
-	this.angvel = 2 * Math.PI;
+DuckPiece.prototype.reset = function(image, cx, cy, x, y, angle, vx, vy, vz, va)
+{
+	this.active = true;
+	this.image = image;
+	this.center.x = cx;
+	this.center.y = cy;
+	this.blood.angvel = va;
+	this.blood.setAngle(angle);
+	this.blood.setPosition(x, y, 0);
+	this.blood.setVelocity(vx, vy, vz);
+	this.blood.emitter.reset();
 }
 
 DuckPiece.prototype.update = function(dt)
 {
-	BloodEmitter.prototype.update.call(this, dt);
+	var blood = this.blood;
+
+	if (this.active)
+		blood.update(dt);
+
+	if (blood.position.y < -120 || blood.position.y > game.height + 120 || blood.position.x < -120 || blood.position.x > game.width + 120 || blood.position.z <= -2)
+		this.active = false;
 }
 
 DuckPiece.prototype.draw = function(context, percent)
 {
+	var blood = this.blood;
+
 	// draw blood
 
 	var partctx = game.particlebuffer.context;
-
 	partctx.clearRect(0, 0, game.width, game.height);
-	BloodEmitter.prototype.draw.call(this, partctx, percent);
+	blood.draw(partctx, percent);
 
 	context.save();
 	context.setTransform(1, 0, 0, 1, 0, 0);
@@ -504,15 +679,15 @@ DuckPiece.prototype.draw = function(context, percent)
 
 	// draw duck piece
 
-	var x = lerp(this.prevpos.x, this.position.x, percent);
-	var y = lerp(this.prevpos.y, this.position.y, percent);
-	var z = lerp(this.prevpos.z, this.position.z, percent);
-	var a = lerp(this.prevang, this.angle, percent);
+	var x = lerp(blood.prevpos.x, blood.position.x, percent);
+	var y = lerp(blood.prevpos.y, blood.position.y, percent);
+	var z = lerp(blood.prevpos.z, blood.position.z, percent);
+	var a = lerp(blood.prevang, blood.angle, percent);
 	var s = Math.exp(z);
 
 	context.save();
 	context.translate(x, y);
-	context.rotate(a);
+	context.rotate(-a);
 	context.scale(s, s);
 	context.drawImage(this.image, -this.center.x, -this.center.y);
 	context.restore();
@@ -521,6 +696,11 @@ DuckPiece.prototype.draw = function(context, percent)
 //******************************************************************************
 // Global helpers
 //******************************************************************************
+
+function deg(value)
+{
+	return value * Math.PI / 180;
+}
 
 function rand(min, max)
 {
