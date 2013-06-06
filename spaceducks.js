@@ -291,7 +291,18 @@ Game.prototype.mouse = function(x, y, pressed)
 				ducks[i].split(head, body);
 				ducks[i].gone = true;
 
-				break;
+				return;
+			}
+		}
+
+		for (var i = this.duckPiecesCount - 1; i >= 0; i--)
+		{
+			var piece = this.duckPieces[i];
+
+			if (!piece.exploding && piece.collides(x, y, this.framePercent))
+			{
+				piece.explode();
+				return;
 			}
 		}
 	}
@@ -359,6 +370,8 @@ function Emitter(owner, callbacks)
 	this.count = 0;
 	this.emissionRate = 0;
 	this.emitCounter = 0;
+	this.elapsed = 0;
+	this.active = true;
 
 	// callbacks
 	this.createElement = callbacks.create;
@@ -380,19 +393,26 @@ Emitter.prototype.reset = function()
 {
 	this.count = 0;
 	this.emitCounter = 0;
+	this.elapsed = 0;
+	this.active = true;
 }
 
 Emitter.prototype.update = function(dt)
 {
+	this.elapsed += dt;
+
 	var max = this.elements.length;
 	var rate = 1.0 / this.emissionRate;
 
 	this.emitCounter += dt;
 
-	while (this.count < max && this.emitCounter > rate)
+	if (this.active)
 	{
-		this.emitCounter -= rate;
-		this.emitElement(this.owner, this.elements[this.count++]);
+		while (this.count < max && this.emitCounter > rate)
+		{
+			this.emitCounter -= rate;
+			this.emitElement(this.owner, this.elements[this.count++]);
+		}
 	}
 
 	for (var i = 0; i < this.count; i++)
@@ -538,6 +558,7 @@ function Blood()
 	Entity.call(this);
 
 	this.particleImage = game.images["blood"];
+	this.explosionMode = false;
 
 	this.emitter = new Emitter(this, {
 		create: function(owner)              { return new Particle();    },
@@ -546,27 +567,40 @@ function Blood()
 		dead:   function(owner, element)     { return element.life <= 0; }
 	});
 
-	this.emitter.init(200, 250);
+	this.emitter.init(200, 1000);
 }
 
 Blood.prototype.emit = function(particle)
 {
-	var dirAngle = this.angle - 0.5 * Math.PI;
-	var dirMagnitude = rand(-1, 1);
+	if (this.explosionMode)
+	{
+		var a = deg(rand(0, 360));
+		var r = rand(0, 10);
 
-	var x = dirMagnitude * Math.cos(dirAngle);
-	var y = dirMagnitude * -Math.sin(dirAngle);
-	var life = 0.8;
-	var angle = this.angle + rand(-10, 10) * Math.PI / 180;
-	var speed = rand(200, 230);
+		particle.reset(r * Math.cos(a), r * -Math.sin(a), 0.7, a, 150);
+	}
+	else
+	{
+		var dirAngle = this.angle - 0.5 * Math.PI;
+		var dirMagnitude = rand(-1, 1);
 
-	particle.reset(x, y, life, angle, speed);
+		var x = dirMagnitude * Math.cos(dirAngle);
+		var y = dirMagnitude * -Math.sin(dirAngle);
+		var life = 0.8;
+		var angle = this.angle + rand(-10, 10) * Math.PI / 180;
+		var speed = rand(200, 230);
+
+		particle.reset(x, y, life, angle, speed);
+	}
 }
 
 Blood.prototype.update = function(dt)
 {
 	Entity.prototype.update.call(this, dt);
 	this.emitter.update(dt);
+
+	if (this.explosionMode && this.emitter.elapsed > 0.2)
+		this.emitter.active = false;
 }
 
 Blood.prototype.draw = function(context, percent)
@@ -636,11 +670,13 @@ function DuckPiece()
 	this.center = { x: 0, y: 0 };
 	this.blood = new Blood();
 	this.active = false;
+	this.exploding = false;
 }
 
 DuckPiece.prototype.reset = function(image, cx, cy, x, y, angle, vx, vy, vz, va)
 {
 	this.active = true;
+	this.exploding = false;
 	this.image = image;
 	this.center.x = cx;
 	this.center.y = cy;
@@ -649,6 +685,29 @@ DuckPiece.prototype.reset = function(image, cx, cy, x, y, angle, vx, vy, vz, va)
 	this.blood.setPosition(x, y, 0);
 	this.blood.setVelocity(vx, vy, vz);
 	this.blood.emitter.reset();
+	this.blood.emitter.emissionRate = 200;
+	this.blood.explosionMode = false;
+}
+
+DuckPiece.prototype.explode = function()
+{
+	this.exploding = true;
+	this.blood.explosionMode = true;
+	this.blood.emitter.reset();
+	this.blood.emitter.emissionRate = 1000;
+}
+
+DuckPiece.prototype.collides = function(x, y, framePercent)
+{
+	var blood = this.blood;
+
+	var deltax = lerp(blood.prevpos.x, blood.position.x, framePercent) - x;
+	var deltay = lerp(blood.prevpos.y, blood.position.y, framePercent) - y;
+
+	if (deltax * deltax + deltay * deltay < 25*25)
+		return true;
+
+	return false;
 }
 
 DuckPiece.prototype.update = function(dt)
@@ -660,6 +719,8 @@ DuckPiece.prototype.update = function(dt)
 
 	if (blood.position.y < -120 || blood.position.y > game.height + 120 || blood.position.x < -120 || blood.position.x > game.width + 120 || blood.position.z <= -2)
 		this.active = false;
+	else if (this.exploding)
+		this.active = blood.emitter.count > 0;
 }
 
 DuckPiece.prototype.draw = function(context, percent)
@@ -679,18 +740,21 @@ DuckPiece.prototype.draw = function(context, percent)
 
 	// draw duck piece
 
-	var x = lerp(blood.prevpos.x, blood.position.x, percent);
-	var y = lerp(blood.prevpos.y, blood.position.y, percent);
-	var z = lerp(blood.prevpos.z, blood.position.z, percent);
-	var a = lerp(blood.prevang, blood.angle, percent);
-	var s = Math.exp(z);
+	if (!this.exploding)
+	{
+		var x = lerp(blood.prevpos.x, blood.position.x, percent);
+		var y = lerp(blood.prevpos.y, blood.position.y, percent);
+		var z = lerp(blood.prevpos.z, blood.position.z, percent);
+		var a = lerp(blood.prevang, blood.angle, percent);
+		var s = Math.exp(z);
 
-	context.save();
-	context.translate(x, y);
-	context.rotate(-a);
-	context.scale(s, s);
-	context.drawImage(this.image, -this.center.x, -this.center.y);
-	context.restore();
+		context.save();
+		context.translate(x, y);
+		context.rotate(-a);
+		context.scale(s, s);
+		context.drawImage(this.image, -this.center.x, -this.center.y);
+		context.restore();
+	}
 }
 
 //******************************************************************************
