@@ -226,70 +226,63 @@ Game.prototype.mouse = function(x, y, pressed)
 
 		for (var i = nDucks - 1; i >= 0; i--)
 		{
-			if (ducks[i].collides(x, y, this.framePercent))
+			var duck = ducks[i];
+
+			var duckx = lerp(duck.prevpos.x, duck.position.x, this.framePercent);
+			var ducky = lerp(duck.prevpos.y, duck.position.y, this.framePercent);
+
+			if (hittest(duckx, ducky, 25, x, y))
 			{
-				var j = 0;
 				var c = this.duckPiecesCount;
 				var L = this.duckPieces.length;
 
 				var head = null;
 				var body = null;
 
-				if (c < L)
-				{
-					head = this.duckPieces[c++];
-				}
-				else
-				{
-					var furthest = 0;
-					var dist = -1;
+				// this will take 2 pieces from duckPieces (head and body)
+				// if all duckPieces are in use, it will take the ones furthest from mouse position
 
-					for (var j = 0; j < L; j++)
+				for (var type = 0; type < 2; type++)
+				{
+					var piece = null;
+
+					if (c < L)
 					{
-						var pos = this.duckPieces[j].blood.position;
-						var d = (pos.x - x) * (pos.x - x) + (pos.y - y) * (pos.y - y);
+						piece = this.duckPieces[c++];
+					}
+					else
+					{
+						var furthest = 0;
+						var dist = -1;
 
-						if (d > dist)
+						for (var j = 0; j < L; j++)
 						{
-							furthest = j;
-							dist = d;
+							if (this.duckPieces[j] === head)
+								continue;
+
+							var pos = this.duckPieces[j].blood.position;
+							var d = (pos.x - x) * (pos.x - x) + (pos.y - y) * (pos.y - y);
+
+							if (d > dist)
+							{
+								furthest = j;
+								dist = d;
+							}
 						}
+
+						piece = this.duckPieces[furthest];
 					}
 
-					head = this.duckPieces[furthest];
-				}
-
-				if (c < L)
-				{
-					body = this.duckPieces[c++];
-				}
-				else
-				{
-					var furthest = 0;
-					var dist = -1;
-
-					for (var j = 0; j < L; j++)
-					{
-						if (this.duckPieces[j] === head)
-							continue;
-
-						var pos = this.duckPieces[j].blood.position;
-						var d = (pos.x - x) * (pos.x - x) + (pos.y - y) * (pos.y - y);
-
-						if (d > dist)
-						{
-							furthest = j;
-							dist = d;
-						}
-					}
-
-					body = this.duckPieces[furthest];
+					if (type === 0)
+						head = piece;
+					else
+						body = piece;
 				}
 
 				this.duckPiecesCount = c;
 
-				ducks[i].split(head, body);
-				ducks[i].gone = true;
+				duck.split(head, body);
+				duck.gone = true;
 
 				return;
 			}
@@ -299,18 +292,22 @@ Game.prototype.mouse = function(x, y, pressed)
 		{
 			var piece = this.duckPieces[i];
 
-			if (!piece.exploding && piece.collides(x, y, this.framePercent))
+			if (!piece.exploding)
 			{
-				piece.explode();
-				return;
+				var piecex = lerp(piece.blood.prevpos.x, piece.blood.position.x, this.framePercent);
+				var piecey = lerp(piece.blood.prevpos.y, piece.blood.position.y, this.framePercent);
+
+				if (hittest(piecex, piecey, 20, x, y))
+				{
+					piece.explode();
+					return;
+				}
 			}
 		}
 	}
 }
 
-Game.prototype.keyboard = function(key, pressed)
-{
-}
+Game.prototype.keyboard = function(key, pressed) {}
 
 //******************************************************************************
 // Entity
@@ -457,17 +454,6 @@ Duck.prototype.spawn = function()
 
 	this.angvel = rand(-720, 720) * (Math.PI / 180);
 	this.gone = false;
-}
-
-Duck.prototype.collides = function(x, y, framePercent)
-{
-	var deltax = lerp(this.prevpos.x, this.position.x, framePercent) - x;
-	var deltay = lerp(this.prevpos.y, this.position.y, framePercent) - y;
-
-	if (deltax * deltax + deltay * deltay < 25*25)
-		return true;
-
-	return false;
 }
 
 Duck.prototype.withinBounds = function()
@@ -697,19 +683,6 @@ DuckPiece.prototype.explode = function()
 	this.blood.emitter.emissionRate = 1000;
 }
 
-DuckPiece.prototype.collides = function(x, y, framePercent)
-{
-	var blood = this.blood;
-
-	var deltax = lerp(blood.prevpos.x, blood.position.x, framePercent) - x;
-	var deltay = lerp(blood.prevpos.y, blood.position.y, framePercent) - y;
-
-	if (deltax * deltax + deltay * deltay < 25*25)
-		return true;
-
-	return false;
-}
-
 DuckPiece.prototype.update = function(dt)
 {
 	var blood = this.blood;
@@ -774,6 +747,11 @@ function rand(min, max)
 function lerp(a, b, percent)
 {
 	return a + (b - a) * percent;
+}
+
+function hittest(cx, cy, radius, x, y)
+{
+	return (cx - x) * (cx - x) + (cy - y) * (cy - y) < radius * radius;
 }
 
 (function()
