@@ -43,7 +43,13 @@ Game.prototype.start = function()
 	this.time = 0;
 	this.accumulator = 0;
 	this.framePercent = 0;
-	this.interpolate = true;
+
+	// sound effects
+
+	this.soundeffects = {};
+	this.soundeffects["cuak"] = new SoundEffect(document.getElementById("cuak"));
+	this.soundeffects["splat"] = new SoundEffect(document.getElementById("splat"));
+	this.soundeffects["rifle"] = new SoundEffect(document.getElementById("rifle"), 10);
 
 	// image resources
 
@@ -70,6 +76,7 @@ Game.prototype.start = function()
 
 	this.shake = 0;
 	this.shakeOffset = { x: 0, y: 0 };
+	this.cuak = 1;
 
 	this.duckEmitter = new Emitter(this, {
 		create: function(owner)           { return new Duck(); },
@@ -117,9 +124,7 @@ Game.prototype.frame = function()
 		this.accumulator -= dt;
 	}
 
-	var percent = this.interpolate ? this.accumulator / dt : 1;
-
-	this.draw(this.backbuffer.context, percent);
+	this.draw(this.backbuffer.context, this.accumulator / dt);
 	this.frontbuffer.context.drawImage(this.backbuffer.canvas, 0, 0);
 
 	requestAnimationFrame(function() { game.frame() });
@@ -150,6 +155,14 @@ Game.prototype.update = function(dt)
 	}
 
 	this.duckPiecesCount = c;
+
+	this.cuak -= dt;
+
+	if (this.cuak <= 0)
+	{
+		this.soundeffects["cuak"].play(rand(50, 100) / 100);
+		this.cuak = rand(2, 10) / 10;
+	}
 }
 
 Game.prototype.draw = function(context, percent)
@@ -213,6 +226,8 @@ Game.prototype.mouse = function(x, y, pressed)
 {
 	if (pressed)
 	{
+		this.soundeffects["rifle"].play();
+
 		if (this.shake > 0)
 		{
 			x += this.shakeOffset.x;
@@ -284,6 +299,8 @@ Game.prototype.mouse = function(x, y, pressed)
 				duck.split(head, body);
 				duck.gone = true;
 
+				this.soundeffects["splat"].play(rand(60, 80) / 100);
+
 				return;
 			}
 		}
@@ -300,6 +317,7 @@ Game.prototype.mouse = function(x, y, pressed)
 				if (hittest(piecex, piecey, 20, x, y))
 				{
 					piece.explode();
+					this.soundeffects["splat"].play(rand(60, 80) / 100);
 					return;
 				}
 			}
@@ -727,6 +745,35 @@ DuckPiece.prototype.draw = function(context, percent)
 		context.scale(s, s);
 		context.drawImage(this.image, -this.center.x, -this.center.y);
 		context.restore();
+	}
+}
+
+//******************************************************************************
+// SoundEffect
+//******************************************************************************
+
+function SoundEffect(audio, concurrency)
+{
+	this.audio = audio;
+	this.pool = [];
+	this.index = 0;
+
+	concurrency = concurrency || 5;
+
+	for (var i = 0; i < concurrency; i++)
+		this.pool.push(audio.cloneNode(true));
+}
+
+SoundEffect.prototype.play = function(volume)
+{
+	if (this.pool[this.index].paused)
+	{
+		if (typeof volume == "undefined")
+			volume = 1;
+
+		this.pool[this.index].volume = volume;
+		this.pool[this.index].play();
+		this.index = (this.index + 1) % this.pool.length;
 	}
 }
 

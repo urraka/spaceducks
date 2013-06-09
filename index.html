@@ -26,7 +26,7 @@
 			height: 100%;
 		}
 
-		#images {
+		#res {
 			position: absolute;
 			left: 0;
 			top: 0;
@@ -36,12 +36,41 @@
 			z-index: -1;
 		}
 	</style>
+	<script type="text/javascript">
+		var audioLoadedCount = 0;
+		var docLoaded = false;
+
+		function audioLoaded()
+		{
+			audioLoadedCount++;
+
+			if (audioLoadedCount === document.getElementsByTagName("audio").length && docLoaded)
+				everythingLoaded();
+		}
+
+		function documentLoaded()
+		{
+			docLoaded = true;
+
+			if (audioLoadedCount === document.getElementsByTagName("audio").length)
+				everythingLoaded();
+		}
+
+		function everythingLoaded()
+		{
+			audioLoaded = function() {};
+			main();
+		}
+	</script>
 </head>
-<body onload="main()">
-	<div id="images">
+<body onload="documentLoaded()">
+	<div id="res">
 		<img id="duck" src="pato.png" />
 		<img id="duckhead" src="head.png" />
 		<img id="duckbody" src="body.png" />
+		<audio id="splat" src="splat.ogg" type="audio/ogg" oncanplaythrough="audioLoaded.call(this)"></audio>
+		<audio id="rifle" src="rifle.ogg" type="audio/ogg" oncanplaythrough="audioLoaded.call(this)"></audio>
+		<audio id="cuak" src="duck.ogg" type="audio/ogg" oncanplaythrough="audioLoaded.call(this)"></audio>
 	</div>
 	<canvas id="canvas"></canvas>
 </body>
