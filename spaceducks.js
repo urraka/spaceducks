@@ -799,7 +799,7 @@ SpaceBackground.prototype.generate = function(width, height)
 			var i = y * width * 4 + x * 4;
 
 			var n = rnd(x + 5000, y + 50);
-			var intensity1 = Math.pow(n, 50);
+			var intensity1 = Math.pow(n, 40);
 			var intensity2 = Math.pow(n, 200);
 
 			imageData.data[i + 0] = intensity1 * 50 + intensity2 * 100;
