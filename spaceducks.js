@@ -10,6 +10,8 @@ function main()
 	game.start();
 }
 
+function frame() { game.frame(); }
+
 //******************************************************************************
 // Game
 //******************************************************************************
@@ -34,7 +36,6 @@ Game.prototype.start = function()
 	this.particlebuffer.canvas = document.createElement("canvas");
 	this.particlebuffer.context = this.particlebuffer.canvas.getContext("2d");
 
-	this.background = null;
 	this.resize();
 
 	// loop timing stuff
@@ -57,22 +58,13 @@ Game.prototype.start = function()
 	this.images["duck"] = document.getElementById("duck");
 	this.images["duckhead"] = document.getElementById("duckhead");
 	this.images["duckbody"] = document.getElementById("duckbody");
-
-	var particleRadius = 3;
-
-	this.images["blood"] = document.createElement("canvas");
-	this.images["blood"].width = particleRadius * 2;
-	this.images["blood"].height = particleRadius * 2;
-
-	var ctx = this.images["blood"].getContext("2d");
-	var gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, particleRadius);
-	gradient.addColorStop(0, "#F00");
-	gradient.addColorStop(1, "rgba(255, 0, 0, 0)");
-	ctx.fillStyle = gradient;
-	ctx.translate(particleRadius, particleRadius);
-	ctx.fillRect(-particleRadius, -particleRadius, 2 * particleRadius, 2 * particleRadius);
+	this.images["blood"] = Particle.generateImage(255, 0, 0, 3);
+	this.images["star"] = Star.generateImage();
 
 	// game stuff
+
+	this.background = new SpaceBackground();
+	this.background.generate(this.width, this.height);
 
 	this.shake = 0;
 	this.shakeOffset = { x: 0, y: 0 };
@@ -127,7 +119,7 @@ Game.prototype.frame = function()
 	this.draw(this.backbuffer.context, this.accumulator / dt);
 	this.frontbuffer.context.drawImage(this.backbuffer.canvas, 0, 0);
 
-	requestAnimationFrame(function() { game.frame() });
+	requestAnimationFrame(frame);
 }
 
 Game.prototype.update = function(dt)
@@ -135,6 +127,7 @@ Game.prototype.update = function(dt)
 	if (this.shake > 0)
 		this.shake -= dt;
 
+	this.background.update(dt);
 	this.duckEmitter.update(dt);
 
 	var c = this.duckPiecesCount;
@@ -173,8 +166,8 @@ Game.prototype.draw = function(context, percent)
 	partctx.setTransform(1, 0, 0, 1, 0, 0); // identity
 
 	context.save();
-	context.fillStyle = this.background;
-	context.fillRect(0, 0, this.width, this.height);
+
+	this.background.draw(context, percent);
 
 	if (this.shake > 0)
 	{
@@ -214,115 +207,117 @@ Game.prototype.resize = function()
 	this.particlebuffer.canvas.width  = this.width;
 	this.particlebuffer.canvas.height = this.height;
 
-	this.background = this.backbuffer.context.createLinearGradient(0, 0, 0, this.height);
-	this.background.addColorStop(0, "#00F");
-	this.background.addColorStop(1, "#FFF");
+	if (this.background)
+		this.background.generate(this.width, this.height);
 
 	if (this.duckEmitter)
 		this.duckEmitter.emissionRate = this.width / 100;
 }
 
-Game.prototype.mouse = function(x, y, pressed)
+Game.prototype.shoot = function(x, y)
 {
-	if (pressed)
+	this.soundeffects["rifle"].play();
+
+	if (this.shake > 0)
 	{
-		this.soundeffects["rifle"].play();
+		x += this.shakeOffset.x;
+		y += this.shakeOffset.y;
+	}
 
-		if (this.shake > 0)
+	this.shake = 0.4;
+
+	var ducks = this.duckEmitter.elements;
+	var nDucks = this.duckEmitter.count;
+
+	for (var i = nDucks - 1; i >= 0; i--)
+	{
+		var duck = ducks[i];
+
+		var duckx = lerp(duck.prevpos.x, duck.position.x, this.framePercent);
+		var ducky = lerp(duck.prevpos.y, duck.position.y, this.framePercent);
+
+		if (hittest(duckx, ducky, 25, x, y))
 		{
-			x += this.shakeOffset.x;
-			y += this.shakeOffset.y;
-		}
+			var c = this.duckPiecesCount;
+			var L = this.duckPieces.length;
 
-		this.shake = 0.4;
+			var head = null;
+			var body = null;
 
-		var ducks = this.duckEmitter.elements;
-		var nDucks = this.duckEmitter.count;
+			// this will take 2 pieces from duckPieces (head and body)
+			// if all duckPieces are in use, it will take the ones furthest from mouse position
 
-		for (var i = nDucks - 1; i >= 0; i--)
-		{
-			var duck = ducks[i];
-
-			var duckx = lerp(duck.prevpos.x, duck.position.x, this.framePercent);
-			var ducky = lerp(duck.prevpos.y, duck.position.y, this.framePercent);
-
-			if (hittest(duckx, ducky, 25, x, y))
+			for (var type = 0; type < 2; type++)
 			{
-				var c = this.duckPiecesCount;
-				var L = this.duckPieces.length;
+				var piece = null;
 
-				var head = null;
-				var body = null;
-
-				// this will take 2 pieces from duckPieces (head and body)
-				// if all duckPieces are in use, it will take the ones furthest from mouse position
-
-				for (var type = 0; type < 2; type++)
+				if (c < L)
 				{
-					var piece = null;
+					piece = this.duckPieces[c++];
+				}
+				else
+				{
+					var furthest = 0;
+					var dist = -1;
 
-					if (c < L)
+					for (var j = 0; j < L; j++)
 					{
-						piece = this.duckPieces[c++];
-					}
-					else
-					{
-						var furthest = 0;
-						var dist = -1;
+						if (this.duckPieces[j] === head)
+							continue;
 
-						for (var j = 0; j < L; j++)
+						var pos = this.duckPieces[j].blood.position;
+						var d = (pos.x - x) * (pos.x - x) + (pos.y - y) * (pos.y - y);
+
+						if (d > dist)
 						{
-							if (this.duckPieces[j] === head)
-								continue;
-
-							var pos = this.duckPieces[j].blood.position;
-							var d = (pos.x - x) * (pos.x - x) + (pos.y - y) * (pos.y - y);
-
-							if (d > dist)
-							{
-								furthest = j;
-								dist = d;
-							}
+							furthest = j;
+							dist = d;
 						}
-
-						piece = this.duckPieces[furthest];
 					}
 
-					if (type === 0)
-						head = piece;
-					else
-						body = piece;
+					piece = this.duckPieces[furthest];
 				}
 
-				this.duckPiecesCount = c;
+				if (type === 0)
+					head = piece;
+				else
+					body = piece;
+			}
 
-				duck.split(head, body);
-				duck.gone = true;
+			this.duckPiecesCount = c;
 
+			duck.split(head, body);
+			duck.gone = true;
+
+			this.soundeffects["splat"].play(rand(60, 80) / 100);
+
+			return;
+		}
+	}
+
+	for (var i = this.duckPiecesCount - 1; i >= 0; i--)
+	{
+		var piece = this.duckPieces[i];
+
+		if (!piece.exploding)
+		{
+			var piecex = lerp(piece.blood.prevpos.x, piece.blood.position.x, this.framePercent);
+			var piecey = lerp(piece.blood.prevpos.y, piece.blood.position.y, this.framePercent);
+
+			if (hittest(piecex, piecey, 20, x, y))
+			{
+				piece.explode();
 				this.soundeffects["splat"].play(rand(60, 80) / 100);
-
 				return;
 			}
 		}
-
-		for (var i = this.duckPiecesCount - 1; i >= 0; i--)
-		{
-			var piece = this.duckPieces[i];
-
-			if (!piece.exploding)
-			{
-				var piecex = lerp(piece.blood.prevpos.x, piece.blood.position.x, this.framePercent);
-				var piecey = lerp(piece.blood.prevpos.y, piece.blood.position.y, this.framePercent);
-
-				if (hittest(piecex, piecey, 20, x, y))
-				{
-					piece.explode();
-					this.soundeffects["splat"].play(rand(60, 80) / 100);
-					return;
-				}
-			}
-		}
 	}
+}
+
+Game.prototype.mouse = function(x, y, pressed)
+{
+	if (pressed)
+		this.shoot(x, y);
 }
 
 Game.prototype.keyboard = function(key, pressed) {}
@@ -664,6 +659,25 @@ Particle.prototype.update = function(dt)
 	this.life -= dt;
 }
 
+Particle.generateImage = function(r, g, b, radius)
+{
+	var canvas = document.createElement("canvas");
+	var context = canvas.getContext("2d");
+	var gradient = context.createRadialGradient(0, 0, 0, 0, 0, radius);
+
+	canvas.width  = radius * 2;
+	canvas.height = radius * 2;
+
+	gradient.addColorStop(0, "rgba(" + r + ", " + g + ", " + b + ", 1)");
+	gradient.addColorStop(1, "rgba(" + r + ", " + g + ", " + b + ", 0)");
+
+	context.fillStyle = gradient;
+	context.translate(radius, radius);
+	context.fillRect(-radius, -radius, 2 * radius, 2 * radius);
+
+	return canvas;
+}
+
 //******************************************************************************
 // DuckPiece
 //******************************************************************************
@@ -746,6 +760,146 @@ DuckPiece.prototype.draw = function(context, percent)
 		context.drawImage(this.image, -this.center.x, -this.center.y);
 		context.restore();
 	}
+}
+
+//******************************************************************************
+// SpaceBackground
+//******************************************************************************
+
+function SpaceBackground()
+{
+	this.image = document.createElement("canvas");
+	this.stars = [];
+	this.time = 0;
+	this.prevtime = 0;
+}
+
+SpaceBackground.prototype.generate = function(width, height)
+{
+	this.image.width  = width;
+	this.image.height = height;
+
+	var context = this.image.getContext("2d");
+	var imageData = context.createImageData(width, height);
+
+	function rnd(x, y)
+	{
+		var result = Math.sin(x * 78.233 + y * 12.9898) * 43758.5453;
+		return result - Math.floor(result);
+	}
+
+	var kstar = 0.000015;
+
+	this.stars.length = 0;
+
+	for (var y = 0; y < height; y++)
+	{
+		for (var x = 0; x < width; x++)
+		{
+			var i = y * width * 4 + x * 4;
+
+			var n = rnd(x + 5000, y + 50);
+			var intensity1 = Math.pow(n, 50);
+			var intensity2 = Math.pow(n, 200);
+
+			imageData.data[i + 0] = intensity1 * 50 + intensity2 * 100;
+			imageData.data[i + 1] = intensity1 * 50 + intensity2 * 100;
+			imageData.data[i + 2] = intensity1 * 50 + intensity2 * 100;
+			imageData.data[i + 3] = 255;
+
+			if (n < kstar)
+			{
+				n = n / kstar;
+				this.stars.push(new Star(x, y, 12 * n + 10, 150 + (1 - n) * 150));
+			}
+		}
+	}
+
+	context.putImageData(imageData, 0, 0);
+}
+
+SpaceBackground.prototype.update = function(dt)
+{
+	this.prevtime = this.time;
+	this.time += dt;
+
+	if (this.time >= 360)
+		this.time -= 360;
+}
+
+SpaceBackground.prototype.draw = function(context, percent)
+{
+	var time = lerp(this.prevtime, this.time, percent);
+
+	context.drawImage(this.image, 0, 0);
+
+	for (var i = this.stars.length - 1; i >= 0; i--)
+		this.stars[i].draw(context, time);
+}
+
+//******************************************************************************
+// Star
+//******************************************************************************
+
+function Star(x, y, size, cyclevel)
+{
+	this.image = game.images["star"];
+	this.position = { x: x, y: y };
+	this.scale = size / 64;
+	this.cyclevel = cyclevel;
+}
+
+Star.prototype.draw = function(context, time)
+{
+	context.save();
+	context.globalAlpha = Math.sin(deg(time * this.cyclevel)) * 0.2 + 0.8;
+	context.translate(this.position.x, this.position.y);
+	context.scale(this.scale, this.scale);
+	context.drawImage(this.image, -32, -32);
+	context.restore();
+}
+
+Star.generateImage = function()
+{
+	var size = 64;
+
+	var canvas = document.createElement("canvas");
+	var context = canvas.getContext("2d");
+	var imageData = context.createImageData(size, size);
+
+	canvas.width  = size;
+	canvas.height = size;
+
+	var k = size * 0.046875;
+	var halfsize = 0.5 * size;
+
+	var cx = halfsize;
+	var cy = halfsize;
+
+	for (var y = 0; y < size; y++)
+	{
+		for (var x = 0; x < size; x++)
+		{
+			var i = y * size * 4 + x * 4;
+
+			var dist = Math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+
+			var salpha = 1 - dist / halfsize;
+			var xalpha = x === cx ? halfsize : k / Math.abs(x - cx);
+			var yalpha = y === cy ? halfsize : k / Math.abs(y - cy);
+
+			alpha = Math.max(0, Math.min(1, salpha * 0.2 + salpha * xalpha * yalpha));
+
+			imageData.data[i + 0] = 255;
+			imageData.data[i + 1] = 255;
+			imageData.data[i + 2] = 255;
+			imageData.data[i + 3] = 255 * alpha;
+		}
+	}
+
+	context.putImageData(imageData, 0, 0);
+
+	return canvas;
 }
 
 //******************************************************************************
