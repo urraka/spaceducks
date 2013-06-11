@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta http-equiv="Content-type" content="text/html; charset=utf-8" />
+	<link rel="icon" href="favicon.ico" type="image/x-icon" />
+	<link rel="shortcut icon" href="favicon.ico" type="image/x-icon" />
+	<title>Space Ducks</title>
+	<link rel="apple-touch-icon" href="favicon.png" />
+	<script type="text/javascript" src="spaceducks.js"></script>
+	<style type="text/css">
+		html,body {
+			margin: 0;
+			padding: 0;
+			width: 100%;
+			height: 100%;
+			cursor:url('target.png') 24 24, default;
+			-moz-user-select: none;
+			-khtml-user-select: none;
+			-webkit-user-select: none;
+			user-select: none;
+		}
+
+		#canvas {
+			display: block;
+			width: 100%;
+			height: 100%;
+		}
+
+		#res {
+			position: absolute;
+			left: 0;
+			top: 0;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			z-index: -1;
+		}
+	</style>
+	<script type="text/javascript">
+		var audioLoadedCount = 0;
+		var docLoaded = false;
+
+		function audioLoaded()
+		{
+			audioLoadedCount++;
+
+			if (audioLoadedCount === document.getElementsByTagName("audio").length && docLoaded)
+				everythingLoaded();
+		}
+
+		function documentLoaded()
+		{
+			docLoaded = true;
+
+			if (audioLoadedCount === document.getElementsByTagName("audio").length)
+				everythingLoaded();
+		}
+
+		function everythingLoaded()
+		{
+			audioLoaded = function() {};
+			main();
+		}
+	</script>
+</head>
+<body onload="documentLoaded()">
+	<div id="res">
+		<img id="duck" src="pato.png" />
+		<img id="duckhead" src="head.png" />
+		<img id="duckbody" src="body.png" />
+		<audio id="splat" src="splat.ogg" type="audio/ogg" oncanplaythrough="audioLoaded.call(this)"></audio>
+		<audio id="rifle" src="rifle.ogg" type="audio/ogg" oncanplaythrough="audioLoaded.call(this)"></audio>
+		<audio id="cuak" src="duck.ogg" type="audio/ogg" oncanplaythrough="audioLoaded.call(this)"></audio>
+	</div>
+	<canvas id="canvas"></canvas>
+</body>
+</html>
