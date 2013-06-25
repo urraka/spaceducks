@@ -28,10 +28,6 @@ Game.prototype.start = function()
 	this.frontbuffer.canvas.setAttribute('unselectable', 'on');
 	this.frontbuffer.context = this.frontbuffer.canvas.getContext("2d");
 
-	this.backbuffer = {};
-	this.backbuffer.canvas = document.createElement("canvas");
-	this.backbuffer.context = this.backbuffer.canvas.getContext("2d");
-
 	this.particlebuffer = {};
 	this.particlebuffer.canvas = document.createElement("canvas");
 	this.particlebuffer.context = this.particlebuffer.canvas.getContext("2d");
@@ -116,8 +112,7 @@ Game.prototype.frame = function()
 		this.accumulator -= dt;
 	}
 
-	this.draw(this.backbuffer.context, this.accumulator / dt);
-	this.frontbuffer.context.drawImage(this.backbuffer.canvas, 0, 0);
+	this.draw(this.frontbuffer.context, this.accumulator / dt);
 
 	requestAnimationFrame(frame);
 }
@@ -202,8 +197,6 @@ Game.prototype.resize = function()
 
 	this.frontbuffer.canvas.width     = this.width;
 	this.frontbuffer.canvas.height    = this.height;
-	this.backbuffer.canvas.width      = this.width;
-	this.backbuffer.canvas.height     = this.height;
 	this.particlebuffer.canvas.width  = this.width;
 	this.particlebuffer.canvas.height = this.height;
 
