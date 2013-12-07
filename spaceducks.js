@@ -92,7 +92,7 @@ Game.prototype.start = function()
 
 	// call frame to start the loop
 
-	this.time = Date.now();
+	this.time = time();
 	this.frame();
 }
 
@@ -100,7 +100,7 @@ Game.prototype.frame = function()
 {
 	var dt = this.dt;
 	var dts = dt / 1000;
-	var t = Date.now();
+	var t = time();
 	var frameTime = Math.min(t - this.time, 250);
 
 	this.time = t;
@@ -948,6 +948,11 @@ function hittest(cx, cy, radius, x, y)
 	return (cx - x) * (cx - x) + (cy - y) * (cy - y) < radius * radius;
 }
 
+function time()
+{
+	return performance.now();
+}
+
 (function()
 {
 	requestAnimationFrame = window.requestAnimationFrame ||
@@ -956,4 +961,12 @@ function hittest(cx, cy, radius, x, y)
 		window.oRequestAnimationFrame ||
 		window.msRequestAnimationFrame ||
 		function(callback) { setTimeout(callback, 1000 / 60); };
+
+	window.performance = window.performance || {};
+	window.performance.now = window.performance.now ||
+		window.performance.webkitNow ||
+		window.performance.msNow ||
+		window.performance.oNow ||
+		window.performance.mozNow ||
+		function() { return Date.now(); };
 })();
